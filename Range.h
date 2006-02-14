@@ -30,29 +30,18 @@ public:
       return;
     }
     //
-    bool defStep=(vstep<=0);
+    bool defN=(vstep<=0);
     m_min  = vmin;
     m_max  = vmax;
-    T d = vmax-vmin;
+    if (defN && (n<2)) n=2;
     //
-    if (defStep) { // defined step size
-      if (d>0) {
-	if (n<2) n=2;
-	m_step = d/static_cast<T>(n-1);
-      } else {
-	n = 1;
-	m_step = static_cast<T>(1);
-      }
+    T d = vmax-vmin;
+    if (defN) { // N is defined
+      m_step = d/static_cast<T>(n-1);
       m_n = n;
     } else { // step is defined
       m_step = vstep;
-      n = 1+static_cast<int>(d/m_step);
-      if (n<2) {
-	n = 1;
-	m_max = m_min;
-	m_step = static_cast<T>(1);
-      }
-      m_n = n;
+      m_n = 1+static_cast<int>(d/m_step);
     }
   }
   //

@@ -10,7 +10,6 @@
 #include <string>
 #include <list>
 #include <vector>
-#include "Combination.h"
 #include "Observable.h"
 
 //
@@ -51,18 +50,10 @@ class Measurement {
     }
     m_nuisancePars.clear();
   }
-
-  bool removeNuisance(const OBS::Base *nptr) {
-    bool rval=false;
-    for (std::list< OBS::Base * >::iterator it = m_nuisancePars.begin();
-	 it != m_nuisancePars.end();
-	 ++it) {
-      if (*it==nptr) {
-	it = m_nuisancePars.erase(it);
-	rval = true;
-      }
-    }
-    return rval;
+  void dump() const {
+    std::cout << "-----------MEASUREMENT------------------------\n";
+    if (m_observable) m_observable->dump();
+    std::cout << "----------------------------------------------\n";
   }
 
   void copyNuisance(std::list< OBS::Base * > & newList ) const {
@@ -75,92 +66,6 @@ class Measurement {
       }
     }
   }
-
-  //! initialize integrals of all nuisance parameters
-  void initIntNuisance() {
-    for (std::list< OBS::Base * >::iterator it = m_nuisancePars.begin();
-	 it !=  m_nuisancePars.end();
-       ++it) {
-      std::cout << "initIntNuisance():: " << (*it) << std::endl;
-      (*it)->initIntDefault();
-    }
-  }
-  //! Assumes that all parameters have called OBS::initInt()
-  void fillIntNuisance() {
-    for (std::list< OBS::Base * >::iterator it = m_nuisancePars.begin();
-	 it !=  m_nuisancePars.end();
-       ++it) {
-      (*it)->fillInt();
-      std::cout << "fillIntNuisance():: " << (*it) << std::endl;
-    }
-  }
-  //! Initialize nuisance weights: f(x)g(y)...dxdy
-  void initNuisanceWeights() {
-    std::cout << "initNuisanceWeights() start" << std::endl;
-    std::vector<int> jj;
-    std::vector<double> dx;
-    double step;
-    int n, nnpar;
-    m_nuisanceIndecis.clear();
-    m_nuisanceIndMax.clear();
-    //
-    nnpar=0;
-    for (std::list< OBS::Base * >::iterator it = m_nuisancePars.begin();
-	 it !=  m_nuisancePars.end();
-       ++it) {
-      nnpar++;
-      std::cout << "   obs " << (*it) << std::endl;
-      if ((*it)->isIntFilled()) {
-	n = (*it)->getIntN();
-	if (n<1) {
-	  std::cout << "WARNING: Integral with ZERO points for nuisance parameter -> " << (*it)->getName() << std::endl;
-	  n=1; //HERE: SHOULD fill integral for fixed value...
-	}
-      } else {
-	// Could in principle call fillInt() here - but let's not...
-	std::cout << "WARNING: Integral not filled for nuisance parameter -> " << (*it)->getName() << std::endl;
-	n=1; //HERE: SHOULD fill integral for fixed value...
-      }
-      std::cout << "Indmax = " << n << std::endl;
-      m_nuisanceIndMax.push_back(n-1);
-      step = (n==1 ? 1.0:(*it)->getIntdX()); // get dx (==1 if only one point)
-      dx.push_back((*it)->getIntdX());
-      jj.push_back(0);
-    }
-    //
-    // Loop over all volume elements (dxdydz...)
-    // and calculate the weight per volume element: f(x)g(y)h(z)...dxdydz
-    //
-    m_nuisanceWeights.clear();
-    double w;
-    m_nuisanceIntNorm = 0;
-    std::cout << "Init nuisance indecis" << std::endl;
-    //
-    m_nuisanceIndecis.push_back(jj); // save vector
-    while (Combination::next_vector(jj,m_nuisanceIndMax)) {
-      m_nuisanceIndecis.push_back(jj); // save vector
-    }
-    //
-    std::list< OBS::Base * >::iterator itnp = m_nuisancePars.begin();
-    //
-    for ( unsigned int i=0; i<m_nuisanceIndecis.size(); i++) {
-      w = 1.0;
-      itnp = m_nuisancePars.begin();
-      //! Calculate w(i,j,...) = f(xi)*dx * g(yj)*dy * ...
-      for (int j=0; j<nnpar; j++) {
-	w *= (*itnp)->getIntWeight(m_nuisanceIndecis[i][j]);
-	++itnp;
-      }
-      m_nuisanceWeights.push_back(w);
-      m_nuisanceIntNorm += w;
-    }
-  }
-  //
-  void dump() const {
-    std::cout << "-----------MEASUREMENT------------------------\n";
-    if (m_observable) m_observable->dump();
-    std::cout << "----------------------------------------------\n";
-  }
   //
   const double getTrueSignal() const        { return m_trueSignal; }
   const T getObsVal() const                 { return (m_observable ? m_observable->getObservedValue():0); }
@@ -172,14 +77,12 @@ class Measurement {
   const std::string & getName()                      const { return m_name;}
   const std::string & getDescription()               const { return m_description;}
   const std::list< OBS::Base * > & getNuisanceList() const { return m_nuisancePars; }
-  const double getNuisanceIntNorm()                  const { return m_nuisanceIntNorm; }
 
   const double rndObs() { OBS::BaseType<T> *p = static_cast< OBS::BaseType<T> * >(m_observable); return (*p)(); }
   //
   virtual const double getM(double s) const =0;
   virtual const double getSignal() const =0;
-  virtual const double getSignalUnc() const =0;
-  virtual const double calcProb(T x, double s) const =0;
+  virtual const double getSignalUnc() const =0; 
 
   void generateObservation() { // generates a random pseudoexperiment and stores this in the observed parts of the observables
     //
@@ -225,20 +128,6 @@ class Measurement {
     }
     return np;
   }
-  
-  const int getNuisanceIndex(const OBS::Base *nptr) {
-    if (nptr==0) return -1;
-    int rval=-1;
-    bool found = false;
-    std::list< OBS::Base * >::iterator it = m_nuisancePars.begin();
-    while (!found && (it != m_nuisancePars.end())) {
-      found = (*it==nptr);
-      rval++;
-      ++it;
-    }
-    return rval;
-  }
-
 
   std::string m_name;
   std::string m_description;
@@ -248,10 +137,6 @@ class Measurement {
   OBS::BaseType<T>                       *m_observable;
   std::list< OBS::Base * >                m_nuisancePars;
   std::vector< std::vector<double> >      m_corrMat;
-  std::vector< double >                   m_nuisanceWeights; //! nuisance pars weights: f(x)g(y)...dxdy...
-  std::vector< std::vector<int> >         m_nuisanceIndecis; //! indecis of (x,y...) -> (i,j,....) used in vector above
-  std::vector< int >                      m_nuisanceIndMax;  //! maximum index per parameter
-  double				  m_nuisanceIntNorm;
 };
 
 class MeasPois : public Measurement<int> {
@@ -280,13 +165,13 @@ class MeasPois : public Measurement<int> {
   const double getM(double s) const { return 0;}
   const double getSignal()    const { return 0;}
   const double getSignalUnc() const { return 0;}
-  const double calcProb(int x, double s) const {return 0;}
+
 };
 
 class MeasPoisEB : public MeasPois {
  public:
-  MeasPoisEB() : MeasPois() { m_eff=0; m_bkg=0; updNuisanceIndex();}
-  MeasPoisEB(const char *name, const char *desc=0) : MeasPois(name,desc) { m_eff=0; m_bkg=0;  updNuisanceIndex();}
+  MeasPoisEB() : MeasPois() { m_eff=0; m_bkg=0; }
+  MeasPoisEB(const char *name, const char *desc=0) : MeasPois(name,desc) { m_eff=0; m_bkg=0; }
   MeasPoisEB(const MeasPoisEB & other):MeasPois() {copy(other);}
   virtual ~MeasPoisEB() { }
   //
@@ -300,25 +185,6 @@ class MeasPoisEB : public MeasPois {
       if (eff) m_eff = eff->clone();
       bkg = other.getBkg();
       if (bkg) m_bkg = bkg->clone();
-    }
-  }
-
-  void updNuisanceIndex() {
-    m_bkgIndex = getNuisanceIndex(m_bkg);
-    m_effIndex = getNuisanceIndex(m_eff);
-  }
-
-  void setEffInt(double scale, int n) {
-    if (m_eff) {
-      m_eff->setIntNpts(n);
-      m_eff->setIntScale(scale);
-    }
-  }
-
-  void setBkgInt(double scale, int n) {
-    if (m_bkg) {
-      m_bkg->setIntNpts(n);
-      m_bkg->setIntScale(scale);
     }
   }
 
@@ -349,7 +215,6 @@ class MeasPoisEB : public MeasPois {
   void setEffPdf(double eff, double sigma, PDF::DISTYPE dist) {
     if (m_eff!=0) {
       if (m_eff->getPdfDist()!=dist) {
-	removeNuisance(m_eff);
 	delete m_eff;
 	m_eff=0;
       }
@@ -357,13 +222,11 @@ class MeasPoisEB : public MeasPois {
     if (m_eff==0) m_eff = static_cast< OBS::BaseType<double> *>(makeNuisance(dist));
     m_eff->setPdfMean(eff);
     m_eff->setPdfSigma(sigma);
-    updNuisanceIndex();
   }
 
   void setBkgPdf(double bkg, double sigma, PDF::DISTYPE dist) {
     if (m_bkg!=0) {
       if (m_bkg->getPdfDist()!=dist) {
-	removeNuisance(m_bkg);
 	delete m_bkg;
 	m_bkg=0;
       }
@@ -371,7 +234,6 @@ class MeasPoisEB : public MeasPois {
     if (m_bkg==0) m_bkg = static_cast< OBS::BaseType<double> *>(makeNuisance(dist));
     m_bkg->setPdfMean(bkg);
     m_bkg->setPdfSigma(sigma);
-    updNuisanceIndex(); // this will set m_bkgIndex (and m_effIndex if needed)
   }
 
   void setEffPdfMean(double m)  { if (m_eff) m_eff->setPdfMean(m); }
@@ -417,71 +279,16 @@ class MeasPoisEB : public MeasPois {
     return m_eff->getObservedValue()*s + m_bkg->getObservedValue();
   }
 
-  const double getM(double s, double eff, double bkg) const {
-    return eff*s + bkg;
-  }
-
-  const double getSignal() const {
+  virtual const double getSignal() const {
     double dn = m_observable->getObservedValue() - m_bkg->getObservedValue();
     double e = m_eff->getObservedValue(); // >0
     return (e>0 ? dn/e : 0);
   }
 
-  const double calcProb(int x, double s) const {
-    if ((m_effIndex<0) ||
-	(m_bkgIndex<0) ||
-	(m_eff==0) ||
-	(m_bkg==0) ||
-	(m_observable==0)) {
-      std::cerr << "ERROR: MeasPoisEB() - No eff and/or bkg defined!" << std::endl;
-      std::cerr << "       EffPtr = " << m_eff << std::endl;
-      std::cerr << "       BkgPtr = " << m_bkg << std::endl;
-      std::cerr << "       EffInd = " << m_effIndex << std::endl;
-      std::cerr << "       BkgInd = " << m_bkgIndex << std::endl;
-      std::cerr << "       Observ = " << m_observable << std::endl;
-
-      return 0.0;
-    }
-    ////// BUG TRAP!
-    if (m_observable->getPdf()==0) {
-      std::cerr << "ERROR: MeasPoisEB() - Observable OK, but with no PDF!" << std::endl;
-      return 0.0;
-    }
-    int ixeff, ixbkg;
-    double p=0;
-    double g;
-    PDF::BaseType<int> *pdf = static_cast<  PDF::BaseType<int> * >(m_observable->getPdf());
-    //////////////// TEMP CODE - FOR DEBUGGING, IN CASE OF BUGS...
-    if (pdf==0) {
-      std::cerr << "ERROR: wrong type of PDF in MeasPoisEB (expected BaseType<int>)!" << std::endl;
-      return 0;
-    }
-    if (m_nuisanceWeights.size() != m_nuisanceIndecis.size()) {
-      std::cerr << "ERROR: nuisance weight and index arrays are not of equal size!" << std::endl;
-      return 0.0;
-    }
-    if (m_nuisanceWeights.size()==0) {
-      std::cerr << "ERROR: nuisance weight and index arrays are not initialized (size zero)!" << std::endl;
-      return 0.0;
-    }
-    //    std::cout << "calcProb( " << x << ", " << s << " )" << std::endl;
-    for (unsigned int i=0; i<m_nuisanceIndecis.size(); i++) {
-      ixeff = m_nuisanceIndecis[i][m_effIndex];
-      ixbkg = m_nuisanceIndecis[i][m_bkgIndex];
-      g = getM(s, m_eff->getIntX(ixeff), m_bkg->getIntX(ixbkg));
-      //      std::cout << "   s(true), e, b, mu = " << s << ", " << m_eff->getIntX(ixeff) << ", " << m_bkg->getIntX(ixbkg) << ", " << g << std::endl;
-      p += m_nuisanceWeights[i]*pdf->getVal(x,g);
-      //      std::cout << "   w, p = " << m_nuisanceWeights[i] << ", " << p << std::endl;
-    }
-
-    return p;
-  }
 
  private:
   OBS::BaseType<double> *m_eff; // pointers to nuisance params in list
   OBS::BaseType<double> *m_bkg;
-  int m_effIndex;
-  int m_bkgIndex;
 };
 
 #endif
